@@ -163,7 +163,7 @@ int hpfp_to_int_converter(hpfp input){
 		}
 		// 맨 앞자리 포함해야 함 (M = 1 + frac)
 		result_int += tmp;
-		if (S == -1)	result_int = -result_int;
+		if (S == 1)	result_int = -result_int;
 	}
 
 	return result_int;
@@ -309,6 +309,7 @@ float hpfp_to_float_converter(hpfp input){
 		result_float += input_hpfp[i] * frac_tmp;
 		frac_tmp /= 2;
 	}
+    // 거듭제곱은 E가 음수일 경우, 양수 power 만큼 나눠줌
 	if (E >= 0)
 		result_float *= power(2, E);
 	else
@@ -320,11 +321,223 @@ float hpfp_to_float_converter(hpfp input){
 }
 
 hpfp addition_function(hpfp a, hpfp b){
-	
+	hpfp result;
+    int s1, exp1, frac1, s2, exp2, frac2, s_r, exp_r, frac_r;
+    int round = 0;
+    int is_a_inf = 0;       // +1 : pos_inf   -1 : neg_inf
+    int is_a_nan = 0;
+    int is_b_inf = 0;       // +1 : pos_inf   -1 : neg_inf
+    int is_b_nan = 0;
+
+    // 1.       a & b의 s, exp, frac
+    s1 = (a & 0x8000) >> 15;
+    s2 = (b & 0x8000) >> 15;
+    exp1 = (0x7c00 & a) >> 10;
+    exp2 = (0x7c00 & b) >> 10;
+    frac1 = ((0x03FF & a) | 0x0400);
+    frac2 = ((0x03FF & b) | 0x0400);
+    // 1-1.     special value 예외처리
+    // pos_inf : 0x7C00
+    // neg_inf : 0xFC00
+    // NaN : 0x7C01
+    enum error {pos_inf, neg_inf, NaN};
+    enum error error_num[3] = { 0x7C00, 0xFC00, 0x7C01 };
+    if (exp1 == 0b11111) {
+        if (frac1 == 0) {
+            if (s1 == 0)
+                is_a_inf = 1;
+            else
+                is_a_inf = -1;
+        }
+        else
+            is_a_nan = 1;
+    }
+    if (exp2 == 0b11111) {
+        if (frac2 == 0) {
+            if (s2 == 0)
+                is_b_inf = 1;
+            else
+                is_b_inf = -1;
+        }
+        else
+            is_b_nan = 1;
+    }
+    if (is_a_inf == 1) {
+        if (is_b_inf == 1) {
+            return error_num[pos_inf];
+        }
+        else if (is_b_inf == -1) {
+            return error_num[NaN];
+        }
+        else {
+            return error_num[pos_inf];
+        }
+    }
+    else if (is_a_inf == -1) {
+        if (is_b_inf == 1) {
+            return error_num[NaN];
+        }
+        else if (is_b_inf == -1) {
+            return error_num[neg_inf];
+        }
+        else {
+            return error_num[neg_inf];
+        }
+    }
+    else if (is_a_nan || is_b_nan) {
+        return error_num[NaN];
+    }
+
+    // 2.       지수가 큰 쪽에 맞추기
+    if (exp1 > exp2) {
+        frac2 >>= (exp1 - exp2);
+        exp2 = exp1;
+    }
+    else if (exp1 < exp2) {
+        frac1 >>= (exp2 - exp1);
+        exp1 = exp2;
+    }
+
+    // 3.       계산
+    if (s1 != s2) {
+        if (frac1 > frac2) {
+            s_r = s1;
+            exp_r = exp1;
+            frac_r = frac1 - frac2;
+            while (!(frac_r & 0x0400)) {
+                frac_r <<= 1;
+                exp_r--;
+            }
+        }
+        else if (frac1 < frac2) {
+            s_r = s2;
+            exp_r = exp2;
+            frac_r = frac2 - frac1;
+            while (!(frac_r & 0x0400)) {
+                frac_r <<= 1;
+                exp_r--;
+            }
+        }
+        else {
+            s_r = 0;
+            exp_r = 0;
+            frac_r = 0;
+        }
+    }
+    else {
+        s_r = s1;
+        exp_r = exp1;
+        frac_r = frac1 + frac2;
+        if (frac_r & 0x0800) {
+            exp_r++;
+            frac_r >>= 1;
+        }
+    }
+
+    // 4.       결과값 합치기
+    result = ((s_r << 15) & 0x8000) | ((exp_r << 10) & 0x7c00) | (frac_r & 0x03FF);
+
+    return result;
 }
 
 hpfp multiply_function(hpfp a, hpfp b){
-	
+    hpfp result;
+    int s1, exp1, frac1, s2, exp2, frac2, s_r, exp_r, frac_r;
+    int round = 0;
+    int is_a_inf = 0;       // +1 : pos_inf   -1 : neg_inf
+    int is_a_nan = 0;
+    int is_b_inf = 0;       // +1 : pos_inf   -1 : neg_inf
+    int is_b_nan = 0;
+
+    // 1.       a & b의 s, exp, frac
+    s1 = (a & 0x8000) >> 15;
+    s2 = (b & 0x8000) >> 15;
+    exp1 = (0x7c00 & a) >> 10;
+    exp2 = (0x7c00 & b) >> 10;
+    frac1 = ((0x03FF & a) | 0x0400);
+    frac2 = ((0x03FF & b) | 0x0400);
+    // 1-1.     special value 예외처리
+    // pos_inf : 0x7C00
+    // neg_inf : 0xFC00
+    // NaN : 0x7C01
+    enum error {pos_inf, neg_inf, NaN};
+    enum error error_num[3] = { 0x7C00, 0xFC00, 0x7C01 };
+    if (exp1 == 0b11111) {
+        if (frac1 == 0) {
+            if (s1 == 0)
+                is_a_inf = 1;
+            else
+                is_a_inf = -1;
+        }
+        else
+            is_a_nan = 1;
+    }
+    if (exp2 == 0b11111) {
+        if (frac2 == 0) {
+            if (s2 == 0)
+                is_b_inf = 1;
+            else
+                is_b_inf = -1;
+        }
+        else
+            is_b_nan = 1;
+    }
+    if (is_a_inf == 1) {
+        if (is_b_inf == 1) {
+            return error_num[pos_inf];
+        }
+        else if (is_b_inf == -1) {
+            return error_num[neg_inf];
+        }
+        else if (b == 0) {
+            return error_num[NaN];
+        }
+        else {
+            if (s2 == 0)
+                return error_num[pos_inf];
+            else
+                return error_num[neg_inf];
+        }
+    }
+    else if (is_a_inf == -1) {
+        if (is_b_inf == 1) {
+            return error_num[neg_inf];
+        }
+        else if (is_b_inf == -1) {
+            return error_num[pos_inf];
+        }
+        else if (b == 0) {
+            return error_num[NaN];
+        }
+        else {
+            if (s2 == 0)
+                return error_num[neg_inf];
+            else
+                return error_num[pos_inf];
+        }
+    }
+    else if (is_a_nan || is_b_nan) {
+        return error_num[NaN];
+    }
+
+    // 2.       곱한 것의 s, exp, frac
+    s_r = s1 ^ s2;
+    exp_r = exp1 + exp2 - 15;
+    frac_r = frac1 * frac2;
+
+    // 3.       곱한 것의 M이 자리를 넘으면, 지수 + 1 및 right shift
+    if (frac_r & 0x200000) {
+        exp_r++;
+        frac_r >>= 1;
+    }
+    // 3-1.     뒷 소수점 반올림
+    if ((frac_r & 0x03FF) > 0x0200)
+        round = 1;
+
+    // 4.       결과값 합치기
+    result = ((s_r << 15) & 0x8000) | ((exp_r << 10) & 0x7c00) | (((frac_r >> 10) + round) & 0x03FF);
+
+    return result;
 }
 
 char* comparison_function(hpfp a, hpfp b){
@@ -333,6 +546,10 @@ char* comparison_function(hpfp a, hpfp b){
 	hpfp result_hpfp = 0;					  // output int
 	int i;
 	int inputs_are_pos = 1;
+    int check_1_nan = 1;
+    int check_2_nan = 1;
+    int is_1_nan = 0;
+    int is_2_nan = 0;
 
 	// 1.		2진법으로 변환
 	for (i = 15; i >= 0; i--) {
@@ -340,6 +557,32 @@ char* comparison_function(hpfp a, hpfp b){
 		input_hpfp_2[i] = b % 2;
 		a /= 2;	b /= 2;
 	}
+    // 1-1.     두 수가 각각 nan인지 체크
+    for (i = 1; i <= 5; i++) {
+        if (input_hpfp_1[i] != 1) {
+            check_1_nan = 0;
+            break;
+        }
+    }
+    for (i = 1; i <= 5; i++) {
+        if (input_hpfp_2[i] != 1) {
+            check_2_nan = 0;
+            break;
+        }
+    }
+    if (check_1_nan) {
+        for (i = 6; i <= 15; i++) {
+            if (input_hpfp_1[i] != 0)
+                is_1_nan = 1;
+        }
+    }
+    if (check_2_nan) {
+        for (i = 6; i <= 15; i++) {
+            if (input_hpfp_2[i] != 0)
+                is_2_nan = 1;
+        }
+    }
+    if (is_1_nan || is_2_nan) return "=";
 
 	// 2.		대소 비교
 	// 2-1.		부호 비교
